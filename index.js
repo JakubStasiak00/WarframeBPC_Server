@@ -29,12 +29,28 @@ app.post('/uploads', upload.single('screenshot'), async (req, res) => {
         console.log(req.file);
         const fileRef = req.file.destination + req.file.filename;
         console.log(fileRef);
-        const [result] = await client.textDetection(fileRef); // line that causes error and stops request from executing any further
+        const [result] = await client.textDetection(fileRef);
         console.log(result)
-        const detections = result.textAnnotations;
+        const detections = result.fullTextAnnotation;
         console.log(detections);
 
-        res.json({message: 'Screenshot uploaded !', file: req.file, detections: detections });
+        let phrases = [];
+        if (detections && detections.pages) {
+            detections.pages.forEach(page => {
+                page.blocks.forEach(block => {
+                    block.paragraphs.forEach(paragraph => {
+                        let phrase = '';
+                        paragraph.words.forEach(word => {
+                            const wordText = word.symbols.map(symbol => symbol.text).join('');
+                            phrase += wordText + ' ';
+                        });
+                        phrases.push(phrase.trim());
+                    });
+                });
+            });
+        }
+
+        res.json({message: 'Screenshot uploaded !', file: req.file, phrases: phrases });
     } catch (err) {
         res.status(400).send('Error uploading file');
     }
