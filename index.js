@@ -4,7 +4,9 @@ const path = require('path');
 const cors = require('cors');
 const vision = require('@google-cloud/vision');
 const axios = require('axios')
-const allTradableItems = require('./TradableItems.js')
+const allTradableItems = require('./TradableItems.js');
+const bodyParser = require('body-parser');
+const fs = require('fs');
 
 
 const app = express();
@@ -14,6 +16,7 @@ const client = new vision.ImageAnnotatorClient({
 });
 
 app.use(cors());
+app.use(bodyParser.json());
 
 // Handle image file storage provided by the user
 const storage = multer.diskStorage({
@@ -30,13 +33,17 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 // handle request to upload screenshot and extract text from it
 app.post('/uploads', upload.single('screenshot'), async (req, res) => {
     try {
-        console.log(req.file);
         const fileRef = req.file.destination + req.file.filename;
-        console.log(fileRef);
         const [result] = await client.textDetection(fileRef);
-        console.log(result)
+        fs.unlink(fileRef, err => {
+            if(err) {
+                console.log(err);
+            } else {
+                console.log('file deleted');
+            }
+        })
+
         const detections = result.fullTextAnnotation;
-        console.log(detections);
 
         // process data sent from cloud vision api to group detections properly
         let phrases = [];
@@ -61,9 +68,26 @@ app.post('/uploads', upload.single('screenshot'), async (req, res) => {
     }
 });
 
-app.get('/tradable-items', async (req, res) => {
-    console.log(allTradableItems);
-    res.json('done');
+app.post('/tradable-items', async (req, res) => {
+    try {
+        if(!allTradableItems.has(req.body.e.toLowerCase())){
+            throw new Error(`Item : ${req.body.e} is not on the list of tradable items !`)
+        }
+        await new Promise(resolve => setTimeout(resolve, 350));
+        const temporaryOrderUrl = `https://api.warframe.market/v2/orders/item/${req.body.e.toLowerCase()}/top`
+        console.log(temporaryOrderUrl);
+        const itemResponse = await axios.get(temporaryOrderUrl);
+        
+        await new Promise(resolve => setTimeout(resolve, 350));
+        const temporaryInfoUrl = `https://api.warframe.market/v2/items/${req.body.e.toLowerCase()}`
+        console.log(temporaryInfoUrl);
+        const itemInformation = await axios.get(temporaryInfoUrl);
+
+        res.json({message: 'done', itemResponse: itemResponse.data, itemInformation: itemInformation.data});
+    } catch (err) {
+        console.log(err.message)
+        res.json({message: 'this item doesnt exist', sendNext: true});
+    }
 })
 
 app.listen(port, () => {
