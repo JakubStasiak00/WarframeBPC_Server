@@ -8,15 +8,46 @@ const allTradableItems = require('./TradableItems.js');
 const bodyParser = require('body-parser');
 const fs = require('fs');
 
-
 const app = express();
 const port = 3000;
 const client = new vision.ImageAnnotatorClient({
     keyFilename: './importantKey.json' // file with your google cloud service account info
 });
+const timer = ms => new Promise(res => setTimeout(res, ms))
 
 app.use(cors());
 app.use(bodyParser.json());
+
+// update list of tradable items every time server starts or once a day
+const updateTradableItems = async () => {
+    const response = await axios.get('https://api.warframe.market/v2/items')
+    let itemData = response.data.data
+    
+    itemData.forEach(item => {
+        if(allTradableItems.has(item.urlName)) {
+            return;
+        } else {
+            allTradableItems.add(item.urlName)
+            console.log(item.urlName)
+        }
+    })
+
+    let updatedItems = Array.from(allTradableItems);
+    let newContent = `let allTradableItems = new Set(${JSON.stringify(updatedItems, null, 4)});\n\nmodule.exports = allTradableItems;`;
+    fs.writeFile(path.join(__dirname, 'TradableItems.js'), newContent, { encoding: 'utf8' }, (err) => {
+        if (err) {
+          console.error('Error writing to file', err);
+          return;
+        }
+        console.log('TradableItems.js has been updated with new items.');
+      });
+
+    console.log('job finished')
+    await timer(86400000) // wait 1 day before running the task again
+    updateTradableItems()
+}
+
+updateTradableItems()
 
 // Handle image file storage provided by the user
 const storage = multer.diskStorage({
@@ -72,7 +103,7 @@ app.post('/tradable-items', async (req, res) => {
     try {
         if(!allTradableItems.has(req.body.e.toLowerCase())){
             throw new Error(`Item : ${req.body.e} is not on the list of tradable items !`)
-        }
+        } else {
         await new Promise(resolve => setTimeout(resolve, 350));
         const temporaryOrderUrl = `https://api.warframe.market/v2/orders/item/${req.body.e.toLowerCase()}/top`
         console.log(temporaryOrderUrl);
@@ -84,6 +115,7 @@ app.post('/tradable-items', async (req, res) => {
         const itemInformation = await axios.get(temporaryInfoUrl);
 
         res.json({message: 'done', itemResponse: itemResponse.data, itemInformation: itemInformation.data});
+        }
     } catch (err) {
         console.log(err.message)
         res.json({message: 'this item doesnt exist', sendNext: true});

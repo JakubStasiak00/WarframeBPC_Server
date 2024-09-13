@@ -4,7 +4,7 @@
   "description": "Backend for the WarframeBPC App",
   "main": "index.js",
   "scripts": {
-    "start": "nodemon index.js localhost 3000"
+    "start": "nodemon --ignore TradableItems.js index.js localhost 3000"
   },
   "author": "Jakub Stasiak",
   "license": "ISC",
@@ -14,6 +14,7 @@
     "body-parser": "^1.20.2",
     "cors": "^2.8.5",
     "express": "^4.19.2",
+    "firebase-admin": "^12.4.0",
     "multer": "^1.4.5-lts.1",
     "nodemon": "^3.1.4"
   }
