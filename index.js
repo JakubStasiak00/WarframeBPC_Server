@@ -7,6 +7,7 @@ const axios = require('axios')
 const allTradableItems = require('./TradableItems.js');
 const bodyParser = require('body-parser');
 const fs = require('fs');
+const admin = require('firebase-admin');
 
 const app = express();
 const port = 3000;
@@ -14,12 +15,54 @@ const client = new vision.ImageAnnotatorClient({
     keyFilename: './importantKey.json' // file with your google cloud service account info
 });
 const timer = ms => new Promise(res => setTimeout(res, ms))
+const serviceAccount = require('./firebaseadminkey.json')
+
+admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount)
+});
+
+const db = admin.firestore();
 
 app.use(cors());
 app.use(bodyParser.json());
 
+const saveItemsUpdateTimestamp = () => {
+    const currentTime = Date.now()
+    const filePath = path.join(__dirname, 'timestamp.txt');
+
+    fs.writeFile(filePath, currentTime.toString(), (err) => {
+        if (err) {
+            console.error('Error writing to file', err);
+        } else {
+            console.log(`timestamp ${currentTime} saved to timestamp.txt`);
+        }
+    });
+}
+
+const readItemUpdateTimestamp = () => {
+    const filePath = path.join(__dirname, 'timestamp.txt');
+
+    if (!fs.existsSync(filePath)) {
+        console.error('Timestamp file not found!');
+        return null;
+    }
+    
+    const timestamp = fs.readFileSync(filePath, 'utf8');
+    return parseInt(timestamp, 10); // Convert the string to an integer
+
+}
+
 // update list of tradable items every time server starts or once a day
 const updateTradableItems = async () => {
+
+    const timestampResult = readItemUpdateTimestamp()
+    console.log(timestampResult)
+    if(timestampResult && Date.now() - timestampResult <= 86400000) {
+        console.log('waiting')
+        await timer(86400000 - (timestampResult - Date.now()))
+    }
+    console.log(Date.now() - timestampResult)
+
     const response = await axios.get('https://api.warframe.market/v2/items')
     let itemData = response.data.data
     
@@ -43,6 +86,7 @@ const updateTradableItems = async () => {
       });
 
     console.log('job finished')
+    saveItemsUpdateTimestamp()
     await timer(86400000) // wait 1 day before running the task again
     updateTradableItems()
 }
@@ -101,23 +145,40 @@ app.post('/uploads', upload.single('screenshot'), async (req, res) => {
 
 app.post('/tradable-items', async (req, res) => {
     try {
-        if(!allTradableItems.has(req.body.e.toLowerCase())){
+        let itemName = req.body.e.toLowerCase()
+        console.log(itemName)
+        switch(itemName){
+            case 'axi_06_relic': 
+            {
+                itemName = 'axi_o6_relic'
+                console.log(`item ${itemName} not present`)
+            }
+            break;
+            
+            case 'lith_11_relic': 
+            {
+                itemName = 'lith_l1_relic'
+                console.log(`item ${itemName} not present`)
+            }
+            break;
+
+        }
+
+        if(!allTradableItems.has(itemName)){
+            console.log(`item ${itemName} not present`)
             throw new Error(`Item : ${req.body.e} is not on the list of tradable items !`)
         } else {
         await new Promise(resolve => setTimeout(resolve, 350));
-        const temporaryOrderUrl = `https://api.warframe.market/v2/orders/item/${req.body.e.toLowerCase()}/top`
-        console.log(temporaryOrderUrl);
+        const temporaryOrderUrl = `https://api.warframe.market/v2/orders/item/${itemName}/top`
         const itemResponse = await axios.get(temporaryOrderUrl);
         
         await new Promise(resolve => setTimeout(resolve, 350));
-        const temporaryInfoUrl = `https://api.warframe.market/v2/items/${req.body.e.toLowerCase()}`
-        console.log(temporaryInfoUrl);
+        const temporaryInfoUrl = `https://api.warframe.market/v2/items/${itemName}`
         const itemInformation = await axios.get(temporaryInfoUrl);
 
         res.json({message: 'done', itemResponse: itemResponse.data, itemInformation: itemInformation.data});
         }
     } catch (err) {
-        console.log(err.message)
         res.json({message: 'this item doesnt exist', sendNext: true});
     }
 })
