@@ -15,7 +15,8 @@ const client = new vision.ImageAnnotatorClient({
     keyFilename: './importantKey.json' // file with your google cloud service account info
 });
 const timer = ms => new Promise(res => setTimeout(res, ms))
-const serviceAccount = require('./firebaseadminkey.json')
+const serviceAccount = require('./firebaseadminkey.json');
+const { userInfo } = require('os');
 
 admin.initializeApp({
     credential: admin.credential.cert(serviceAccount)
@@ -93,6 +94,8 @@ const updateTradableItems = async () => {
 
 updateTradableItems()
 
+
+
 // Handle image file storage provided by the user
 const storage = multer.diskStorage({
     destination: './uploads/',
@@ -104,6 +107,39 @@ const storage = multer.diskStorage({
 const upload = multer({storage: storage});
 
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+app.post('/has-credits', async (req, res) => {
+
+    const uid = req.body.uid
+
+    try {
+        console.log(uid)
+        const userRef = db.collection('usersInfo').doc(uid)
+        console.log(uid)
+        const userDoc = await userRef.get()
+        console.log(userDoc)
+
+        if(!userDoc.exists) {
+            console.log('user doesnt exist')
+            return res.status(404).json({ message: 'User not found.' })
+        }
+
+        const calculateRemainingCredits = () => {
+            return (userDoc.data().currency - 1)
+        }
+
+        if (calculateRemainingCredits() <= 0) {
+            console.log('not enough currency')
+            throw new Error(`User ${uid} has ${userDoc.data().currency} remaining credits`)
+        }
+        console.log('before update')
+        await userRef.update({ currency: calculateRemainingCredits() })
+        console.log('after update')
+        res.status(200).json({ message: 'Currency required is sufficient', shouldAllowRequest: true})
+    } catch (err) {
+        res.json({ message: err })
+    }
+})
 
 // handle request to upload screenshot and extract text from it
 app.post('/uploads', upload.single('screenshot'), async (req, res) => {
